@@ -1,17 +1,12 @@
-<?php
-require __DIR__ . '/../vendor/autoload.php';
-use Illuminate\Foundation\Application;
-use Illuminate\Foundation\Configuration\Exceptions;
-use Illuminate\Foundation\Configuration\Middleware;
-use Webkernel\CliServiceProvider;
-
-return Application::configure(basePath: dirname(__DIR__))
-  ->withRouting(web: __DIR__ . '/../routes/web.php', commands: __DIR__ . '/../routes/console.php', health: '/up')
-  ->withMiddleware(function (Middleware $middleware): void {
-    //
-  })
-  ->withExceptions(function (Exceptions $exceptions): void {
-    //
-  })
-  ->withProviders([CliServiceProvider::class])
-  ->create();
+<?php declare(strict_types=1);
+namespace Bootstrap;
+require_once __DIR__ . '/Application/Fastboot.php';
+use Webkernel\Fastboot;
+# FASTBOOT APP | WEBKERNEL_BOOTSTRAP_ENTRY | DO_NOT_EDIT
+# THIS FILE IS AUTO-GENERATED | WILL BE OVERWRITTEN_ON_UPDATE
+final class FastApplication extends Fastboot
+{
+  public const string SERIAL = '1.0.0-2025-a3f7b9c2';
+}
+require_once __DIR__ . '/src-app/bridge-functions.php';
+return FastApplication::boot();

@@ -101,10 +101,12 @@ abstract class Fastboot
   private static function registerCoreNamespaces(): void
   {
     $namespaces = [
-      'Bootstrap\\' => self::$basePath . '/bootstrap',
-      'Webkernel\\' => self::$basePath . '/bootstrap/Application',
-      'WebKernel\\' => self::$basePath . '/bootstrap/Application',
-      'App\\Models\\' => self::$basePath . '/bootstrap/Models',
+      'App\\Module\\' => self::$basePath . '/app-platform',
+      'Bootstrap\\' => self::$basePath . '/bootstrap/',
+      'Webkernel\\' => self::$basePath . '/bootstrap/src/Application/',
+      'App\\Models\\' => self::$basePath . '/bootstrap/src/Models/',
+      'Database\\Factories\\' => self::$basePath . '/bootstrap/src/Database/Factories/',
+      'Database\\Seeders\\' => self::$basePath . '/bootstrap/src/Database/Seeders/',
     ];
 
     foreach ($namespaces as $namespace => $path) {
@@ -197,8 +199,8 @@ abstract class Fastboot
   {
     $routes = self::$manifest['routes'] ?? [];
     $providers = [
-      \WebKernel\Bridges\SystemPanelProvider::class,
-      \WebKernel\Bridges\BridgeServiceProvider::class,
+      # \WebKernel\Bridges\SystemPanelProvider::class,
+      # \WebKernel\Bridges\BridgeServiceProvider::class,
       ...self::$manifest['providers']['critical'] ?? [],
       ...self::$manifest['providers']['deferred'] ?? [],
     ];
@@ -248,7 +250,6 @@ abstract class Fastboot
   private static function overrideApplicationNamespace(Laravel $app): void
   {
     $namespaceProperty = new \ReflectionProperty($app, 'namespace');
-    $namespaceProperty->setAccessible(true);
     $namespaceProperty->setValue($app, 'App\\');
   }
 
