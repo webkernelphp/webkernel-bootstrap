@@ -17,6 +17,18 @@ use Webkernel\Console\PromptHelper;
  */
 final class KernelUpdateCommand extends Command
 {
+  private const string KERNEL_REPO = 'webkernelphp/bootstrap';
+  private const string BOOTSTRAP_APP_PATH = 'bootstrap/app.php';
+  private const string VERSION_PATTERN = '/public\s+const\s+string\s+VERSION\s*=\s*[\'"]([^\'\"]+)[\'"]/';
+  private const int RELEASE_FETCH_TIMEOUT = 30;
+  private const int MAX_RELEASES_DISPLAY = 10;
+  private const string UPDATE_CANCELLED_MSG = 'Update cancelled';
+  private const string UPDATE_SUCCESS_MSG = 'Kernel updated successfully!';
+  private const string UPDATE_FAILED_MSG = 'Kernel update failed';
+  private const string NO_RELEASES_MSG = 'No kernel releases found';
+  private const string NO_VERSION_MSG = 'No version selected';
+  private const string VERSION_DETECTION_FAILED_MSG = 'Unable to detect current kernel version';
+
   /**
    * The name and signature of the console command
    *
@@ -30,7 +42,7 @@ final class KernelUpdateCommand extends Command
                             {--no-hooks : Skip hook execution}
                             {--pre-release : Include pre-releases}
                             {--dry-run : Simulate without making changes}
-                            {--no-details : Hide detailed output during update}';
+                            {--force : Force update even if same version}';
 
   /**
    * The console command description
@@ -39,6 +51,8 @@ final class KernelUpdateCommand extends Command
    */
   protected $description = 'Update the WebKernel core bootstrap';
 
+  private ModuleService $service;
+
   /**
    * Execute the console command
    *
@@ -46,68 +60,158 @@ final class KernelUpdateCommand extends Command
    */
   public function handle(): int
   {
+    $currentVersion = $this->getCurrentKernelVersion();
+
+    if (!$currentVersion) {
+      PromptHelper::error(self::VERSION_DETECTION_FAILED_MSG);
+      return 1;
+    }
+
+    $this->line("Current kernel version: {$currentVersion}");
+    $this->newLine();
+
     $config = new ConfigManager();
-    $service = $this->createService();
+    $this->service = $this->createService();
 
     $createBackup = !$this->option('no-backup') && PromptHelper::confirm('Create backup before kernel update?', true);
 
     PromptHelper::warning('This will update the core WebKernel bootstrap');
 
     if (!PromptHelper::confirm('Continue with kernel update?', false)) {
-      PromptHelper::info('Update cancelled');
+      PromptHelper::info(self::UPDATE_CANCELLED_MSG);
       return 0;
     }
 
     $token = $this->option('token') ? (string) $this->option('token') : $config->getToken();
     $provider = new GitHubProvider($token, false);
 
-    $showDetails = !$this->option('no-details');
-
-    // Fetch releases with detailed output by default
-    if ($showDetails) {
-      $this->line('→ Fetching kernel releases from webkernelphp/bootstrap...');
-      $releases = $provider->fetchReleases('webkernelphp/bootstrap', (bool) $this->option('pre-release'));
-    } else {
-      /** @var array<int, array{tag_name: string, name?: string, published_at?: string, prerelease?: bool}>|null $releases */
-      $releases = PromptHelper::spin(
-        fn() => $provider->fetchReleases('webkernelphp/bootstrap', (bool) $this->option('pre-release')),
-        'Fetching kernel releases...',
-      );
-    }
+    $releases = $this->fetchReleases($provider);
 
     if (!$releases || count($releases) === 0) {
-      PromptHelper::error('No kernel releases found');
+      PromptHelper::error(self::NO_RELEASES_MSG);
       return 1;
     }
 
-    $version = $this->selectVersion($releases);
+    $version = $this->selectVersion($releases, $currentVersion);
+
     if (!$version) {
-      PromptHelper::error('No version selected');
+      PromptHelper::error(self::NO_VERSION_MSG);
       return 1;
     }
 
-    // Update kernel with detailed output by default
-    if ($showDetails) {
-      $this->newLine();
-      $this->line("→ Starting kernel update to {$version}...");
+    if ($version === $currentVersion && !$this->option('force')) {
+      PromptHelper::info("Already on version {$version}. Use --force to reinstall.");
+      return 0;
+    }
 
-      if ($createBackup) {
-        $this->line('  • Creating backup...');
+    if ($version === $currentVersion) {
+      PromptHelper::warning("Reinstalling current version {$version}");
+    }
+
+    $result = $this->executeUpdate($version, $createBackup);
+
+    return $this->handleUpdateResult($result);
+  }
+
+  /**
+   * Get current kernel version from bootstrap/app.php
+   *
+   * @return string|null Current version or null if not found
+   */
+  private function getCurrentKernelVersion(): ?string
+  {
+    $bootstrapPath = base_path(self::BOOTSTRAP_APP_PATH);
+
+    if (!file_exists($bootstrapPath)) {
+      return null;
+    }
+
+    $content = file_get_contents($bootstrapPath);
+
+    if ($content === false) {
+      return null;
+    }
+
+    if (preg_match(self::VERSION_PATTERN, $content, $matches)) {
+      return $matches[1];
+    }
+
+    return null;
+  }
+
+  /**
+   * Fetch releases from GitHub
+   *
+   * @param GitHubProvider $provider GitHub provider instance
+   * @return array<int, array{tag_name: string, name?: string, published_at?: string, prerelease?: bool}>|null
+   */
+  private function fetchReleases(GitHubProvider $provider): ?array
+  {
+    $includePreRelease = (bool) $this->option('pre-release');
+
+    $this->newLine();
+    $this->line('Fetching kernel releases from ' . self::KERNEL_REPO . '...');
+
+    try {
+      $releases = $provider->fetchReleases(self::KERNEL_REPO, $includePreRelease);
+
+      if (!$releases) {
+        return null;
       }
 
-      // Set verbose mode on service
-      $service->setVerbose(true);
-      $service->setOutput($this->output);
+      $this->line('Found ' . count($releases) . ' release(s)');
+      return $releases;
+    } catch (\Exception $e) {
+      PromptHelper::error("Failed to fetch releases: {$e->getMessage()}");
+      return null;
+    }
+  }
 
-      $result = $service->updateKernel($version, $createBackup);
-    } else {
-      /** @var array{success: bool, error?: string, dry_run?: bool, version?: string} $result */
-      $result = PromptHelper::spin(
-        fn() => $service->updateKernel($version, $createBackup),
-        "Updating kernel to {$version}...",
-      );
+  /**
+   * Execute the kernel update with progress output
+   *
+   * @param string $version Target version
+   * @param bool $createBackup Whether to create backup
+   * @return array{success: bool, error?: string, dry_run?: bool, version?: string}
+   */
+  private function executeUpdate(string $version, bool $createBackup): array
+  {
+    $this->newLine();
+    $this->line("Starting kernel update to {$version}...");
+
+    if ($createBackup) {
+      $this->line('  • Creating backup...');
     }
 
+    $this->line('  • Acquiring kernel update lock...');
+    $this->line('  • Finding provider for ' . self::KERNEL_REPO . '...');
+    $this->line('  • Fetching kernel releases...');
+    $this->line("  • Looking for kernel version {$version}...");
+
+    try {
+      $result = $this->service->updateKernel($version, $createBackup);
+
+      if ($result['success'] && !isset($result['dry_run'])) {
+        $this->line('  • Update completed');
+      }
+
+      return $result;
+    } catch (\Exception $e) {
+      return [
+        'success' => false,
+        'error' => $e->getMessage(),
+      ];
+    }
+  }
+
+  /**
+   * Handle update result and display appropriate message
+   *
+   * @param array{success: bool, error?: string, dry_run?: bool, version?: string} $result
+   * @return int Exit code
+   */
+  private function handleUpdateResult(array $result): int
+  {
     if ($result['success']) {
       if (isset($result['dry_run'])) {
         PromptHelper::info('[DRY RUN] Would have updated kernel');
@@ -115,13 +219,13 @@ final class KernelUpdateCommand extends Command
       }
 
       $this->newLine();
-      $this->components->info('Kernel updated successfully!');
+      $this->components->info(self::UPDATE_SUCCESS_MSG);
       $this->line("  Version: {$result['version']}");
 
       return 0;
     }
 
-    PromptHelper::error($result['error'] ?? 'Kernel update failed');
+    PromptHelper::error($result['error'] ?? self::UPDATE_FAILED_MSG);
     return 1;
   }
 
@@ -129,28 +233,70 @@ final class KernelUpdateCommand extends Command
    * Select version from available releases
    *
    * @param array<int, array{tag_name: string, name?: string, published_at?: string, prerelease?: bool}> $releases
+   * @param string $currentVersion Current kernel version
    * @return string|null Selected version tag
    */
-  private function selectVersion(array $releases): ?string
+  private function selectVersion(array $releases, string $currentVersion): ?string
   {
     if ($this->option('with-version')) {
-      return (string) $this->option('with-version');
+      $requested = (string) $this->option('with-version');
+
+      if (!$this->versionExists($releases, $requested)) {
+        PromptHelper::error("Version {$requested} not found in releases");
+        return null;
+      }
+
+      return $requested;
     }
 
     if ($this->option('latest')) {
       return $releases[0]['tag_name'];
     }
 
+    $this->newLine();
+
     /** @var array<string, string> $options */
     $options = [];
-    foreach ($releases as $release) {
+    $displayCount = min(count($releases), self::MAX_RELEASES_DISPLAY);
+
+    for ($i = 0; $i < $displayCount; $i++) {
+      $release = $releases[$i];
+      $isCurrent = $release['tag_name'] === $currentVersion;
       $prerelease = $release['prerelease'] ?? false ? ' [PRE-RELEASE]' : '';
+      $current = $isCurrent ? ' [CURRENT]' : '';
       $published = substr($release['published_at'] ?? '', 0, 10);
-      $label = sprintf('%s - %s (%s)%s', $release['tag_name'], $release['name'] ?? '', $published, $prerelease);
+
+      $label = sprintf(
+        '%s - %s (%s)%s%s',
+        $release['tag_name'],
+        $release['name'] ?? '',
+        $published,
+        $prerelease,
+        $current,
+      );
+
       $options[$release['tag_name']] = $label;
     }
 
     return PromptHelper::select('Select kernel version', $options, $releases[0]['tag_name']);
+  }
+
+  /**
+   * Check if version exists in releases
+   *
+   * @param array<int, array{tag_name: string}> $releases
+   * @param string $version Version to check
+   * @return bool True if version exists
+   */
+  private function versionExists(array $releases, string $version): bool
+  {
+    foreach ($releases as $release) {
+      if ($release['tag_name'] === $version) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
