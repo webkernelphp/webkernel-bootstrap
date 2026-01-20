@@ -2,8 +2,6 @@
 
 namespace Webkernel\Arcanes;
 
-use Illuminate\Support\Facades\File;
-
 /**
  * Manifest builder for static module discovery
  *
@@ -24,10 +22,14 @@ final class BuildManifest
   {
     $manifest = $this->discover();
 
-    File::ensureDirectoryExists(dirname($outputPath));
+    $dir = dirname($outputPath);
+    if (!is_dir($dir)) {
+      @mkdir($dir, 0755, true);
+    }
 
     $content = "<?php declare(strict_types=1);\nreturn " . $this->exportArray($manifest) . ";\n";
-    File::put($outputPath, $content);
+
+    file_put_contents($outputPath, $content);
   }
 
   private function exportArray(mixed $value, int $indent = 0): string
@@ -70,11 +72,11 @@ final class BuildManifest
       return compact('namespaces', 'providers', 'middleware', 'routes', 'moduleRoutes', 'modules');
     }
 
-    $vendorDirs = File::directories($this->platformPath);
+    $vendorDirs = $this->getDirectories($this->platformPath);
 
     foreach ($vendorDirs as $vendorPath) {
       $vendor = basename($vendorPath);
-      $modulePaths = File::directories($vendorPath);
+      $modulePaths = $this->getDirectories($vendorPath);
 
       foreach ($modulePaths as $modulePath) {
         $moduleId = basename($modulePath);
@@ -92,7 +94,8 @@ final class BuildManifest
 
         require_once $moduleFile;
 
-        $content = File::get($moduleFile);
+        $content = file_get_contents($moduleFile);
+
         if (!preg_match('/namespace\s+([^;]+);/', $content, $nsMatch)) {
           continue;
         }
@@ -141,7 +144,11 @@ final class BuildManifest
 
   private function findModuleFile(string $modulePath): ?string
   {
-    $files = File::glob($modulePath . '/*Module.php');
+    $files = glob($modulePath . '/*Module.php');
+
+    if ($files === false) {
+      return null;
+    }
 
     foreach ($files as $file) {
       if (is_file($file)) {
@@ -152,10 +159,38 @@ final class BuildManifest
     return null;
   }
 
+  private function getDirectories(string $path): array
+  {
+    if (!is_dir($path)) {
+      return [];
+    }
+
+    $directories = [];
+    $items = scandir($path);
+
+    if ($items === false) {
+      return [];
+    }
+
+    foreach ($items as $item) {
+      if ($item === '.' || $item === '..') {
+        continue;
+      }
+
+      $fullPath = $path . '/' . $item;
+
+      if (is_dir($fullPath)) {
+        $directories[] = $fullPath;
+      }
+    }
+
+    return $directories;
+  }
+
   public static function execute(): void
   {
     $basePath = dirname(__DIR__, 3);
-    $outputPath = $basePath . '/bootstrap/cache/webkernel-modules.php';
+    $outputPath = $basePath . '/cache/webkernel-modules.php';
 
     $builder = new self($basePath);
     $builder->build($outputPath);
