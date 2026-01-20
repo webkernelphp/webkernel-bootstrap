@@ -3,7 +3,7 @@
 namespace Webkernel;
 
 use Illuminate\Support\ServiceProvider;
-use Webkernel\Modules\Cli\{InstallModuleCommand, ListModulesCommand, KernelUpdateCommand};
+use Webkernel\Console\Commands\{InstallModuleCommand, ListModulesCommand, KernelUpdateCommand};
 
 final class CliServiceProvider extends ServiceProvider
 {

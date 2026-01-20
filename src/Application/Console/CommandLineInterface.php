@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace WebKernel;
+namespace Webkernel\Console;
 
 use Illuminate\Contracts\Console\Kernel;
 use Symfony\Component\Console\Input\ArgvInput;

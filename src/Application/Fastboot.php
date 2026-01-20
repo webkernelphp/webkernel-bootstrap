@@ -1,7 +1,6 @@
 <?php declare(strict_types=1);
-
 namespace Webkernel;
-
+require_once __DIR__ . '/../../../vendor/autoload.php';
 use Illuminate\Foundation\Application as Laravel;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -67,9 +66,7 @@ abstract class Fastboot
     if (!file_exists($autoloadPath)) {
       self::renderCriticalErrorHtml(
         'DEPENDENCY RESOLUTION FAILURE',
-        'Critical system dependency missing at path: ' .
-          $autoloadPath .
-          '. Core autoloader not found. System cannot proceed without dependency chain verification.',
+        "Critical system dependency missing at path: {$autoloadPath}. Core autoloader not found. System cannot proceed without dependency chain verification.",
         500,
         'FATAL',
       );
@@ -206,6 +203,7 @@ abstract class Fastboot
     $providers = [
       # \Webkernel\Bridges\SystemPanelProvider::class,
       # \Webkernel\Bridges\BridgeServiceProvider::class,
+      \Webkernel\AppPanelProvider::class,
       \Webkernel\CliServiceProvider::class,
       ...self::$manifest['providers']['critical'] ?? [],
       ...self::$manifest['providers']['deferred'] ?? [],
