@@ -1,0 +1,20 @@
+{
+  "name": "webkernel/bootstrap",
+  "description": "Bootstrap package for WebKernel",
+  "type": "library",
+  "license": "MPL-2.0",
+  "require": {},
+  "autoload": {
+    "psr-4": {
+      "App\\Models\\": "src/Models/",
+      "Bootstrap\\": "",
+      "Database\\Factories\\": "src/Database/Factories/",
+      "Database\\Seeders\\": "src/Database/Seeders/",
+      "Webkernel\\": "src/Application/"
+    },
+    "files": [],
+    "exclude-from-classmap": [
+      "var/"
+    ]
+  }
+}

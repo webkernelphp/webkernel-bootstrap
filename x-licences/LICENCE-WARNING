@@ -1,0 +1,33 @@
+WARNING — PROTECTED CORE
+
+THIS DIRECTORY CONTAINS THE WEBKERNEL™ CORE.
+IT IS A CONTROLLED AND GOVERNED COMPONENT.
+ANY MODIFICATION IS STRONGLY DISCOURAGED.
+
+WebKernel™ is the intellectual property of Numerimondes.
+The core is released under a free software license, but its integrity,
+identity, and compatibility are contractually and technically governed.
+
+Numerimondes is the sole author, maintainer, and guarantor of WebKernel™.
+Only unmodified cores are eligible for updates, security patches,
+marketplace modules, enterprise support, and certifications.
+
+Any alteration, fork, patch, or derivative voids all guarantees,
+loses access to modules and services, and risks silent incompatibilities,
+security regressions, and systemic degradation. Such versions are
+independent, unsupported, and untrusted. They are not recognized
+as WebKernel™ and must not present themselves as such.
+
+Maintenance, security, compliance, and legal responsibility for modified
+versions rest solely and exclusively with the modifying party.
+
+Numerimondes reserves the right to deny marketplace access, revoke update
+channels, refuse support, and reject certification for altered cores.
+
+Contributions are accepted only through the official process, via pull
+requests reviewed and validated by Numerimondes.
+
+WebKernel™ is open core, but Numerimondes remains the reference authority
+for its evolution, security, and long-term stability.
+
+DO NOT MODIFY THIS CORE UNLESS YOU FULLY ACCEPT THE CONSEQUENCES.

@@ -1,0 +1,47 @@
+WARNING — PROTECTED CORE
+
+THIS DIRECTORY CONTAINS THE WEBKERNEL™ CORE.
+IT IS A CONTROLLED AND GOVERNED COMPONENT.
+ANY MODIFICATION IS STRONGLY DISCOURAGED.
+
+WebKernel™ is the intellectual property of Numerimondes.
+The serial embedded in this core is not a secret or a cryptographic key,
+but an identity marker. It carries minimal information:
+
+    • Version WebKernel (e.g. 1.0.0)
+    • Release year (e.g. 2025)
+    • Unique suffix (e.g. a3f7b9c2)
+
+This serial is an instance label: it declares “I am such version, released
+in such year.” Integrity, identity, and compatibility are contractually
+and technically governed by Numerimondes.
+
+Numerimondes is the sole author, maintainer, and guarantor of WebKernel™.
+Only unmodified cores, with their original serials, are eligible for
+updates, security patches, marketplace modules, enterprise support,
+and certifications.
+
+Any alteration, fork, patch, or derivative voids all guarantees,
+loses access to modules and services, and risks silent incompatibilities,
+security regressions, and systemic degradation. Such versions are
+independent, unsupported, and untrusted. They are not recognized
+as WebKernel™ and must not present themselves as such.
+
+Maintenance, security, compliance, and legal responsibility for modified
+versions rest solely and exclusively with the modifying party.
+
+Numerimondes reserves the right to deny marketplace access, revoke update
+channels, refuse support, and reject certification for altered cores.
+
+Contributions are accepted only through the official process, via pull
+requests reviewed and validated by Numerimondes.
+
+WebKernel™ is open core, but Numerimondes remains the reference authority
+for its evolution, security, and long-term stability. The distant server
+knows the list of valid instances, distinguishes enterprise from
+governmental clients, and decides which special modules are delivered.
+
+Local instances never know in advance what they will receive; they simply
+identify themselves by their serial and await the server’s decision.
+
+DO NOT MODIFY THIS CORE UNLESS YOU FULLY ACCEPT THE CONSEQUENCES.
