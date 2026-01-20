@@ -216,8 +216,8 @@ abstract class Fastboot
         ->withRouting(
           web: is_string($routes['web'] ?? null)
             ? $routes['web']
-            : (is_file(self::$basePath . '/bootstrap/src-app/routes/web.php')
-              ? self::$basePath . '/bootstrap/src-app/routes/web.php'
+            : (is_file(self::$basePath . '/bootstrap/src/Routes/web.php')
+              ? self::$basePath . '/bootstrap/src/Routes/web.php'
               : null),
           api: is_string($routes['api'] ?? null) ? $routes['api'] : null,
           health: self::HEALTH_ROUTE,
