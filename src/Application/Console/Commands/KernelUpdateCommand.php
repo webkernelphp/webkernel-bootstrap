@@ -29,7 +29,8 @@ final class KernelUpdateCommand extends Command
                             {--no-backup : Skip backup creation}
                             {--no-hooks : Skip hook execution}
                             {--pre-release : Include pre-releases}
-                            {--dry-run : Simulate without making changes}';
+                            {--dry-run : Simulate without making changes}
+                            {--no-details : Hide detailed output during update}';
 
   /**
    * The console command description
@@ -60,11 +61,19 @@ final class KernelUpdateCommand extends Command
     $token = $this->option('token') ? (string) $this->option('token') : $config->getToken();
     $provider = new GitHubProvider($token, false);
 
-    /** @var array<int, array{tag_name: string, name?: string, published_at?: string, prerelease?: bool}>|null $releases */
-    $releases = PromptHelper::spin(
-      fn() => $provider->fetchReleases('webkernelphp/bootstrap', (bool) $this->option('pre-release')),
-      'Fetching kernel releases...',
-    );
+    $showDetails = !$this->option('no-details');
+
+    // Fetch releases with detailed output by default
+    if ($showDetails) {
+      $this->line('→ Fetching kernel releases from webkernelphp/bootstrap...');
+      $releases = $provider->fetchReleases('webkernelphp/bootstrap', (bool) $this->option('pre-release'));
+    } else {
+      /** @var array<int, array{tag_name: string, name?: string, published_at?: string, prerelease?: bool}>|null $releases */
+      $releases = PromptHelper::spin(
+        fn() => $provider->fetchReleases('webkernelphp/bootstrap', (bool) $this->option('pre-release')),
+        'Fetching kernel releases...',
+      );
+    }
 
     if (!$releases || count($releases) === 0) {
       PromptHelper::error('No kernel releases found');
@@ -77,11 +86,27 @@ final class KernelUpdateCommand extends Command
       return 1;
     }
 
-    /** @var array{success: bool, error?: string, dry_run?: bool, version?: string} $result */
-    $result = PromptHelper::spin(
-      fn() => $service->updateKernel($version, $createBackup),
-      "Updating kernel to {$version}...",
-    );
+    // Update kernel with detailed output by default
+    if ($showDetails) {
+      $this->newLine();
+      $this->line("→ Starting kernel update to {$version}...");
+
+      if ($createBackup) {
+        $this->line('  • Creating backup...');
+      }
+
+      // Set verbose mode on service
+      $service->setVerbose(true);
+      $service->setOutput($this->output);
+
+      $result = $service->updateKernel($version, $createBackup);
+    } else {
+      /** @var array{success: bool, error?: string, dry_run?: bool, version?: string} $result */
+      $result = PromptHelper::spin(
+        fn() => $service->updateKernel($version, $createBackup),
+        "Updating kernel to {$version}...",
+      );
+    }
 
     if ($result['success']) {
       if (isset($result['dry_run'])) {

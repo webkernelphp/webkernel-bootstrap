@@ -9,6 +9,7 @@ use Webkernel\Modules\Hooks\HookExecutor;
 use Webkernel\Modules\Exceptions\{ModuleException, ValidationException};
 use Webkernel\Arcanes\ModuleMetadata;
 use Illuminate\Support\Facades\File;
+use Symfony\Component\Console\Output\OutputInterface;
 
 final class ModuleService
 {
@@ -16,6 +17,8 @@ final class ModuleService
   private bool $executeHooks = true;
   private bool $validateModules = true;
   private bool $dryRun = false;
+  private bool $verbose = false;
+  private ?OutputInterface $output = null;
 
   public function __construct(
     private LockManager $lock,
@@ -45,22 +48,44 @@ final class ModuleService
     $this->dryRun = $dryRun;
   }
 
+  public function setVerbose(bool $verbose): void
+  {
+    $this->verbose = $verbose;
+  }
+
+  public function setOutput(?OutputInterface $output): void
+  {
+    $this->output = $output;
+  }
+
+  private function log(string $message): void
+  {
+    if ($this->verbose && $this->output) {
+      $this->output->writeln($message);
+    }
+  }
+
   public function installModule(string $identifier, string $version, bool $createBackup): array
   {
     if ($this->dryRun) {
       return ['success' => true, 'dry_run' => true];
     }
 
+    $this->log("  • Acquiring lock for install-{$identifier}...");
     $this->lock->acquire("install-{$identifier}");
 
     try {
+      $this->log("  • Finding provider for {$identifier}...");
       $provider = $this->findProvider($identifier);
+
+      $this->log("  • Fetching releases for {$identifier}...");
       $releases = $provider->fetchReleases($identifier, false);
 
       if (!$releases || count($releases) === 0) {
         throw new ModuleException('No releases found');
       }
 
+      $this->log("  • Looking for version {$version}...");
       $release = $this->findRelease($releases, $version);
 
       if (!$release) {
@@ -71,23 +96,26 @@ final class ModuleService
       $backupDir = null;
 
       try {
+        $this->log("  • Downloading release to {$tempDir}...");
         $provider->downloadRelease($release, $tempDir);
 
         if ($this->executeHooks) {
           $hookFile = "{$tempDir}/webkernel-install.php";
           if (file_exists($hookFile)) {
+            $this->log('  • Executing install hook...');
             $this->hookExecutor->execute($hookFile, 'install');
           }
         }
 
         if ($this->validateModules) {
+          $this->log('  • Validating module...');
           $validationResult = $this->validator->validate($tempDir);
-
           if (!$validationResult->isValid) {
             throw new ValidationException("Module validation failed:\n" . implode("\n", $validationResult->errors));
           }
         }
 
+        $this->log('  • Extracting module metadata...');
         $metadata = $this->extractModuleMetadata($tempDir);
 
         if ($metadata === null) {
@@ -106,17 +134,23 @@ final class ModuleService
 
         if ($createBackup && is_dir($targetDir)) {
           $backupDir = $this->backup->createBackup($targetDir, basename($metadata->installPath));
+          $this->log("  • Backup created at: {$backupDir}");
         }
 
         if (is_dir($targetDir)) {
+          $this->log('  • Removing existing module directory...');
           File::deleteDirectory($targetDir);
         }
 
+        $this->log("  • Installing module to {$targetDir}...");
         File::ensureDirectoryExists(dirname($targetDir));
         File::move($tempDir, $targetDir);
+
+        $this->log('  • Dumping composer autoload...');
         $this->composer->dumpAutoload();
 
         if ($createBackup) {
+          $this->log('  • Cleaning old backups...');
           $this->backup->cleanOldBackups(basename($metadata->installPath));
         }
 
@@ -129,10 +163,12 @@ final class ModuleService
         ];
       } catch (\Exception $e) {
         if (isset($tempDir) && is_dir($tempDir)) {
+          $this->log('  • Cleaning up temporary directory...');
           File::deleteDirectory($tempDir);
         }
 
         if ($backupDir && is_dir($backupDir)) {
+          $this->log('  • Restoring from backup...');
           $this->backup->restoreBackup($backupDir, $targetDir);
         }
 
@@ -154,16 +190,21 @@ final class ModuleService
       return ['success' => true, 'dry_run' => true];
     }
 
+    $this->log('  • Acquiring kernel update lock...');
     $this->lock->acquire('update-kernel');
 
     try {
+      $this->log('  • Finding provider for webkernelphp/bootstrap...');
       $provider = $this->findProvider('webkernelphp/bootstrap');
+
+      $this->log('  • Fetching kernel releases...');
       $releases = $provider->fetchReleases('webkernelphp/bootstrap', false);
 
       if (!$releases || count($releases) === 0) {
         throw new ModuleException('No kernel releases found');
       }
 
+      $this->log("  • Looking for kernel version {$version}...");
       $release = $this->findRelease($releases, $version);
 
       if (!$release) {
@@ -176,17 +217,24 @@ final class ModuleService
       $preserved = ['cache', 'var-elements'];
 
       if ($createBackup && is_dir($baseDir)) {
-        $this->backup->createBackup($baseDir, 'kernel');
+        $backupPath = $this->backup->createBackup($baseDir, 'kernel');
+        $this->log("  • Backup created at: {$backupPath}");
       }
 
       try {
+        $this->log('  • Preserving directories: ' . implode(', ', $preserved));
         $this->backupDirs($baseDir, $preserved, $backupDir);
+
+        $this->log("  • Downloading kernel to {$tempDir}...");
         $provider->downloadRelease($release, $tempDir);
+
+        $this->log('  • Restoring preserved directories...');
         $this->restoreDirs($backupDir, $tempDir, $preserved);
 
         if ($this->executeHooks) {
           $hookFile = "{$tempDir}/webkernel-update.php";
           if (file_exists($hookFile)) {
+            $this->log('  • Executing update hook...');
             $this->hookExecutor->execute($hookFile, 'update');
           }
         }
@@ -194,18 +242,28 @@ final class ModuleService
         if (is_dir($baseDir)) {
           $oldDir = $baseDir . '.old';
           if (is_dir($oldDir)) {
+            $this->log('  • Removing old kernel directory...');
             File::deleteDirectory($oldDir);
           }
+
+          $this->log('  • Moving current kernel to .old...');
           File::move($baseDir, $oldDir);
+
+          $this->log('  • Installing new kernel...');
           File::move($tempDir, $baseDir);
+
+          $this->log('  • Cleaning up old kernel...');
           File::deleteDirectory($oldDir);
         } else {
+          $this->log('  • Installing new kernel...');
           File::move($tempDir, $baseDir);
         }
 
+        $this->log('  • Cleaning up temporary backup...');
         File::deleteDirectory($backupDir);
 
         if ($createBackup) {
+          $this->log('  • Cleaning old kernel backups...');
           $this->backup->cleanOldBackups('kernel');
         }
 
@@ -215,11 +273,15 @@ final class ModuleService
         ];
       } catch (\Exception $e) {
         if (isset($tempDir) && is_dir($tempDir)) {
+          $this->log('  • Cleaning up temporary directory...');
           File::deleteDirectory($tempDir);
         }
+
         if (isset($backupDir) && is_dir($backupDir)) {
+          $this->log('  • Cleaning up backup directory...');
           File::deleteDirectory($backupDir);
         }
+
         throw $e;
       }
     } catch (\Exception $e) {
