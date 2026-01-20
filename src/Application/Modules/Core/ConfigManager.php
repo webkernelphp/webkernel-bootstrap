@@ -81,4 +81,9 @@ final class ConfigManager
     File::put($this->configPath, $json);
     File::chmod($this->configPath, 0600);
   }
+
+  public function getToken(?string $owner = 'webkernelphp', ?string $repo = null): ?string
+  {
+    return $this->getGithubToken($owner, $repo);
+  }
 }
