@@ -2,10 +2,8 @@
 namespace Webkernel\Modules\Providers;
 
 use Webkernel\Modules\Core\Contracts\SourceProvider;
-use Webkernel\Modules\Exceptions\NetworkException;
-use Webkernel\Modules\Exceptions\IntegrityException;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\File;
+use Webkernel\Modules\Exceptions\{NetworkException, IntegrityException};
+use Illuminate\Support\Facades\{Http, File};
 use Illuminate\Http\Client\Response;
 use Webkernel\Console\PromptHelper;
 use Webkernel\Modules\Core\ConfigManager;
@@ -14,6 +12,11 @@ use ZipArchive;
 final class GitHubProvider implements SourceProvider
 {
   private const string API_BASE = 'https://api.github.com';
+  private const int DOWNLOAD_TIMEOUT = 600;
+  private const int CONNECT_TIMEOUT = 30;
+  private const int MAX_REDIRECTS = 10;
+  private const array CURL_PROGRESS_THRESHOLDS = [10, 25, 50, 75, 90];
+
   private ConfigManager $config;
   private bool $tokenLoadedFromConfig = false;
 
@@ -62,7 +65,7 @@ final class GitHubProvider implements SourceProvider
       'Accept' => 'application/vnd.github+json',
       'X-GitHub-Api-Version' => '2022-11-28',
       'User-Agent' => 'WebKernel-Installer',
-    ]);
+    ])->timeout(self::CONNECT_TIMEOUT);
 
     if ($this->insecure) {
       $anonRequest = $anonRequest->withoutVerifying();
@@ -106,6 +109,8 @@ final class GitHubProvider implements SourceProvider
         if ($shouldRetry) {
           $this->showTokenHelp($owner, $repo);
           $this->askForTokenInteractively($owner, $repo);
+
+          /** @var Response $retry */
           $retry = $this->authenticatedRequest($repoUrl);
 
           if ($retry->successful()) {
@@ -150,6 +155,8 @@ final class GitHubProvider implements SourceProvider
   private function executeFetch(string $owner, string $repo, bool $includePreReleases): array
   {
     $url = sprintf('%s/repos/%s/%s/releases', self::API_BASE, $owner, $repo);
+
+    /** @var Response $response */
     $response = $this->authenticatedRequest($url);
 
     if ($response->status() === 404) {
@@ -164,6 +171,7 @@ final class GitHubProvider implements SourceProvider
     }
 
     $data = $response->json();
+
     if (empty($data) || !is_array($data)) {
       PromptHelper::info('No releases found. Using default branch as fallback.');
       return $this->handleBranchFallback($owner, $repo);
@@ -195,6 +203,8 @@ final class GitHubProvider implements SourceProvider
   private function handleBranchFallback(string $owner, string $repo): array
   {
     $repoUrl = sprintf('%s/repos/%s/%s', self::API_BASE, $owner, $repo);
+
+    /** @var Response $response */
     $response = $this->authenticatedRequest($repoUrl);
 
     if (!$response->successful()) {
@@ -223,7 +233,7 @@ final class GitHubProvider implements SourceProvider
       'Accept' => 'application/vnd.github+json',
       'X-GitHub-Api-Version' => '2022-11-28',
       'User-Agent' => 'WebKernel-Installer',
-    ]);
+    ])->timeout(self::CONNECT_TIMEOUT);
 
     if ($this->token && trim($this->token) !== '') {
       $request = $request->withToken(trim($this->token));
@@ -233,7 +243,10 @@ final class GitHubProvider implements SourceProvider
       $request = $request->withoutVerifying();
     }
 
-    return $request->get($url);
+    /** @var Response $response */
+    $response = $request->get($url);
+
+    return $response;
   }
 
   private function askForTokenInteractively(string $owner, string $repo): void
@@ -266,22 +279,29 @@ final class GitHubProvider implements SourceProvider
   public function downloadRelease(array $release, string $targetDir): bool
   {
     $zipUrl = (string) ($release['zipball_url'] ?? '');
+
     if ($zipUrl === '') {
       throw new NetworkException('Release has no zipball_url.');
     }
 
+    PromptHelper::info('Starting download...');
+
     $zipContent = $this->downloadZipball($zipUrl);
+
     return $this->extractArchive($zipContent, $targetDir, $release);
   }
 
   private function downloadZipball(string $url): string
   {
-    $maxRedirects = 10;
+    /**current url */
     $currentUrl = $url;
     $attempt = 0;
 
-    while ($attempt++ < $maxRedirects) {
+    while ($attempt++ < self::MAX_REDIRECTS) {
+      $lastProgress = 0;
+
       $ch = curl_init($currentUrl);
+
       if ($ch === false) {
         throw new NetworkException('Failed to initialize cURL.');
       }
@@ -305,8 +325,29 @@ final class GitHubProvider implements SourceProvider
         CURLOPT_HEADER => true,
         CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_TIMEOUT => 300,
-        CURLOPT_CONNECTTIMEOUT => 30,
+        CURLOPT_TIMEOUT => self::DOWNLOAD_TIMEOUT,
+        CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT,
+        CURLOPT_NOPROGRESS => false,
+        CURLOPT_PROGRESSFUNCTION => static function (
+          mixed $ch,
+          float|int $downloadSize,
+          float|int $downloaded,
+          float|int $uploadSize,
+          float|int $uploaded,
+        ) use (&$lastProgress): int {
+          if ($downloadSize > 0) {
+            $percent = (int) (($downloaded / $downloadSize) * 100);
+
+            foreach (self::CURL_PROGRESS_THRESHOLDS as $threshold) {
+              if ($percent >= $threshold && $lastProgress < $threshold) {
+                echo " {$threshold}%";
+                $lastProgress = $threshold;
+                break;
+              }
+            }
+          }
+          return 0;
+        },
       ]);
 
       if ($this->insecure) {
@@ -329,6 +370,7 @@ final class GitHubProvider implements SourceProvider
 
       if ($httpCode >= 300 && $httpCode < 400) {
         $location = $this->extractHeaderValue($headerText, 'Location');
+
         if (!$location) {
           throw new NetworkException('Redirect without Location header.');
         }
@@ -342,6 +384,7 @@ final class GitHubProvider implements SourceProvider
       }
 
       if ($httpCode === 200) {
+        echo "\n";
         PromptHelper::success('Downloaded ' . $this->formatBytes(strlen($body)));
         return $body;
       }
@@ -355,11 +398,13 @@ final class GitHubProvider implements SourceProvider
   public function verifyChecksum(string $content, array $release): bool
   {
     $expectedChecksum = $release['checksum'] ?? ($release['sha256'] ?? null);
+
     if (empty($expectedChecksum)) {
       return true;
     }
 
     $actualChecksum = hash('sha256', $content);
+
     if (!hash_equals((string) $actualChecksum, (string) $expectedChecksum)) {
       throw new IntegrityException("Checksum mismatch. Expected: {$expectedChecksum}, Got: {$actualChecksum}");
     }
@@ -372,9 +417,11 @@ final class GitHubProvider implements SourceProvider
     if (preg_match('#github\.com/([^/]+)/([^/]+?)(?:\.git)?$#i', $identifier, $m)) {
       return [$m[1], $m[2]];
     }
+
     if (preg_match('#^([^/]+)/([^/]+)$#', $identifier, $m)) {
       return [$m[1], $m[2]];
     }
+
     throw new NetworkException('Invalid GitHub identifier: ' . $identifier);
   }
 
@@ -383,6 +430,7 @@ final class GitHubProvider implements SourceProvider
     $this->verifyChecksum($zipContent, $release);
 
     $tempFile = tempnam(sys_get_temp_dir(), 'wk_module_');
+
     if ($tempFile === false) {
       throw new NetworkException('Failed to create temp file.');
     }
@@ -408,9 +456,11 @@ final class GitHubProvider implements SourceProvider
       }
 
       $zip->close();
+
       $this->flattenGitHubArchive($targetDir);
 
       PromptHelper::success("Extracted to {$targetDir}");
+
       return true;
     } finally {
       if (file_exists($tempFile)) {
@@ -422,6 +472,7 @@ final class GitHubProvider implements SourceProvider
   private function flattenGitHubArchive(string $targetDir): void
   {
     $dirs = File::directories($targetDir);
+
     if (count($dirs) !== 1) {
       return;
     }
@@ -448,6 +499,7 @@ final class GitHubProvider implements SourceProvider
     if (preg_match('/^' . preg_quote($name, '/') . ':\s*(.+)$/im', $headers, $m)) {
       return trim($m[1]);
     }
+
     return null;
   }
 
