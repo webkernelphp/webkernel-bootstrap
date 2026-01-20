@@ -49,6 +49,8 @@ final class KernelUpdateCommand extends Command
   {
     $this->debug = (bool) $this->option('debug');
 
+    $this->cleanOldArtifacts();
+
     $currentVersion = $this->getCurrentKernelVersion();
 
     if (!$currentVersion) {
@@ -93,7 +95,15 @@ final class KernelUpdateCommand extends Command
       return 0;
     }
 
-    if ($version === $currentVersion) {
+    $normalizedVersion = $this->normalizeVersion($version);
+    $normalizedCurrent = $this->normalizeVersion($currentVersion);
+
+    if ($normalizedVersion === $normalizedCurrent && !$this->option('force')) {
+      PromptHelper::info(sprintf(self::ALREADY_ON_VERSION_MSG, $version));
+      return 0;
+    }
+
+    if ($normalizedVersion === $normalizedCurrent) {
       PromptHelper::warning(sprintf(self::REINSTALLING_VERSION_MSG, $version));
     }
 
@@ -230,7 +240,7 @@ final class KernelUpdateCommand extends Command
 
     for ($i = 0; $i < $displayCount; $i++) {
       $release = $releases[$i];
-      $isCurrent = $release['tag_name'] === $currentVersion;
+      $isCurrent = $this->normalizeVersion($release['tag_name']) === $this->normalizeVersion($currentVersion);
       $prerelease = $release['prerelease'] ?? false ? ' [PRE-RELEASE]' : '';
       $current = $isCurrent ? ' [CURRENT]' : '';
       $published = substr($release['published_at'] ?? '', 0, 10);
@@ -248,6 +258,11 @@ final class KernelUpdateCommand extends Command
     }
 
     return PromptHelper::select('Select kernel version', $options, $releases[0]['tag_name']);
+  }
+
+  private function normalizeVersion(string $version): string
+  {
+    return ltrim($version, 'v');
   }
 
   private function versionExists(array $releases, string $version): bool
@@ -291,5 +306,33 @@ final class KernelUpdateCommand extends Command
     }
 
     return $service;
+  }
+
+  private function cleanOldArtifacts(): void
+  {
+    $this->debug('Cleaning old artifacts...');
+
+    $pathsToClean = ['bootstrap/cache/webkernel/backups', 'bootstrap/.locks', 'storage/system/locks'];
+
+    foreach ($pathsToClean as $path) {
+      $fullPath = base_path($path);
+
+      if (is_dir($fullPath)) {
+        $this->debug("Removing: {$path}");
+
+        $files = glob($fullPath . '/*');
+        if ($files !== false) {
+          foreach ($files as $file) {
+            if (is_file($file)) {
+              @unlink($file);
+            } elseif (is_dir($file)) {
+              \Illuminate\Support\Facades\File::deleteDirectory($file);
+            }
+          }
+        }
+      }
+    }
+
+    $this->debug('Artifacts cleaned');
   }
 }
