@@ -172,6 +172,9 @@ final class KernelUpdateCommand extends Command
     }
   }
 
+  /**
+   * @return array|array<string,mixed>
+   */
   private function executeUpdate(string $version, bool $createBackup): array
   {
     $this->newLine();
@@ -197,6 +200,10 @@ final class KernelUpdateCommand extends Command
     }
   }
 
+  /**
+   * @param array $result
+   * @return int
+   */
   private function handleUpdateResult(array $result): int
   {
     if ($result['success']) {
@@ -216,6 +223,11 @@ final class KernelUpdateCommand extends Command
     return 1;
   }
 
+  /**
+   * @param array $releases
+   * @param string $currentVersion
+   * @return ?string
+   */
   private function selectVersion(array $releases, string $currentVersion): ?string
   {
     if ($this->option('with-version')) {
@@ -265,6 +277,13 @@ final class KernelUpdateCommand extends Command
     return ltrim($version, 'v');
   }
 
+  /**
+   * Check if a version exists in the releases array.
+   *
+   * @param array $releases
+   * @param string $version
+   * @return bool
+   */
   private function versionExists(array $releases, string $version): bool
   {
     foreach ($releases as $release) {

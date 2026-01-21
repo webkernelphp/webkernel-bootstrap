@@ -16,10 +16,10 @@ use Illuminate\Foundation\Configuration\Middleware;
  */
 abstract class Fastboot
 {
-  private const string MANIFEST_PATH = '/bootstrap/cache/webkernel-modules.php';
+  private const string MANIFEST_PATH = '/storage/system/webkernel-modules.php';
   private const string STORAGE_PATH = '/storage';
-  private const string DATABASE_PATH = '/bootstrap/src-app/database';
-  private const string SYSTEM_LOG_PATH = '/bootstrap/src-app/storage/system';
+  private const string DATABASE_PATH = '/bootstrap/src/Database';
+  private const string SYSTEM_LOG_PATH = '/storage/system/log';
   private const string HEALTH_ROUTE = '/up';
   private const string SEAL = \Bootstrap\FastApplication::class;
 
@@ -104,8 +104,8 @@ abstract class Fastboot
       'Bootstrap\\' => self::$basePath . '/bootstrap/',
       'Webkernel\\' => self::$basePath . '/bootstrap/src/Application/',
       'App\\Models\\' => self::$basePath . '/bootstrap/src/Models/',
-      'Database\\Factories\\' => self::$basePath . '/bootstrap/src/Database/Factories/',
-      'Database\\Seeders\\' => self::$basePath . '/bootstrap/src/Database/Seeders/',
+      'Database\\Factories\\' => self::$basePath . '/bootstrap/src/Database/factories/',
+      'Database\\Seeders\\' => self::$basePath . '/bootstrap/src/Database/seeders/',
     ];
 
     foreach ($namespaces as $namespace => $path) {
@@ -200,12 +200,10 @@ abstract class Fastboot
     self::ensureStorageDirectories();
 
     $routes = self::$manifest['routes'] ?? [];
+    $baseProviders = require self::$basePath . '/bootstrap/library/providers.php';
+
     $providers = [
-      # \Webkernel\Bridges\SystemPanelProvider::class,
-      # \Webkernel\Bridges\BridgeServiceProvider::class,
-      \Webkernel\Panels\ThemeServiceProvider::class,
-      \Webkernel\AppPanelProvider::class,
-      \Webkernel\CliServiceProvider::class,
+      ...$baseProviders,
       ...self::$manifest['providers']['critical'] ?? [],
       ...self::$manifest['providers']['deferred'] ?? [],
     ];
